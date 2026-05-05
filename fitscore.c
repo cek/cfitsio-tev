@@ -55,9 +55,15 @@ SERVICES PROVIDED HEREUNDER."
 #define PutMesg    5 /* add a new message to the stack */
 #define PutMark    6 /* add a marker to the stack */
 
-#ifdef _REENTRANT
+#ifdef CFITSIO_USE_C11_THREADS
 /*
-    Fitsio_Lock and Fitsio_Pthread_Status are declared in fitsio2.h. 
+    Declared in fitsio2.h and initialized in cfileio.c via call_once.
+*/
+mtx_t Fitsio_Lock;
+
+#elif defined(_REENTRANT)
+/*
+    Fitsio_Lock and Fitsio_Pthread_Status are declared in fitsio2.h.
 */
 pthread_mutex_t Fitsio_Lock;
 int Fitsio_Pthread_Status = 0;

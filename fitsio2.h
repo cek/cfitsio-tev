@@ -3,20 +3,40 @@
  
 #include "fitsio.h"
 
-/* 
+/*
     Threading support using POSIX threads programming interface
-    (supplied by Bruce O'Neel) 
+    (supplied by Bruce O'Neel)
 
-    All threaded programs MUST have the 
+    All threaded programs MUST have the
 
     -D_REENTRANT
 
-    on the compile line and must link with -lpthread.  This means that
-    when one builds cfitsio for threads you must have -D_REENTRANT on the
-    gcc or cc command line.
+    on the compile line. This means that when one builds cfitsio for
+    threads you must have -D_REENTRANT on the gcc or cc command line.
+
+    When both _REENTRANT and CFITSIO_USE_C11_THREADS are defined,
+    C11's <threads.h> will be used to implement mutual exclusion.
+    When only _REENTRANT is defined, pthreads will be used, and the
+    program must link with -lpthread.
 */
 
-#ifdef _REENTRANT
+#ifdef CFITSIO_USE_C11_THREADS
+
+#include <threads.h>
+extern mtx_t Fitsio_Lock;
+
+#define FFLOCK1(lockname)   ((void)mtx_lock(&(lockname)))
+#define FFUNLOCK1(lockname) ((void)mtx_unlock(&(lockname)))
+#define FFLOCK   FFLOCK1(Fitsio_Lock)
+#define FFUNLOCK FFUNLOCK1(Fitsio_Lock)
+
+#ifdef _WIN32
+#define ffstrtok(str, tok, save) strtok_s(str, tok, save)
+#else
+#define ffstrtok(str, tok, save) strtok_r(str, tok, save)
+#endif
+
+#elif defined(_REENTRANT)
 #include <pthread.h>
 /*  #include <assert.h>  not needed any more */
 extern pthread_mutex_t Fitsio_Lock;

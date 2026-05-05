@@ -59,7 +59,17 @@ static int find_curlybracket(char **string);
 static int standardize_path(char *fullpath, int *status);
 int comma2semicolon(char *string);
 
-#ifdef _REENTRANT
+#ifdef CFITSIO_USE_C11_THREADS
+
+/* Lazy initialization of Fitsio_Lock using call_once. */
+static once_flag Fitsio_Lock_Once = ONCE_FLAG_INIT;
+
+static void fitsio_init_locks_impl(void)
+{
+    (void)mtx_init(&Fitsio_Lock, mtx_plain | mtx_recursive);
+}
+
+#elif defined(_REENTRANT)
 
 pthread_mutex_t Fitsio_InitLock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -69,8 +79,12 @@ pthread_mutex_t Fitsio_InitLock = PTHREAD_MUTEX_INITIALIZER;
 int fitsio_init_lock(void)
 {
   int status = 0;
-  
-#ifdef _REENTRANT
+
+#if defined(CFITSIO_USE_C11_THREADS)
+
+  call_once(&Fitsio_Lock_Once, fitsio_init_locks_impl);
+
+#elif defined(_REENTRANT)
 
   static int need_to_init = 1;
 
