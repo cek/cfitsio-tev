@@ -46,25 +46,53 @@ INCLUDE(GNUInstallDirs)
 # Build options:
 #==============================================================================
 
-# Allow the developer to select if Dynamic or Static libraries are built
-OPTION(BUILD_SHARED_LIBS "Build Shared Libraries" ON)
+# Detect whether CFITSIO is being built standalone or via add_subdirectory().
+IF(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    SET(CFITSIO_IS_TOPLEVEL TRUE)
+ELSE()
+    SET(CFITSIO_IS_TOPLEVEL FALSE)
+ENDIF()
 
-# Allow curl dependency to be disabled with "-DUSE_CURL=OFF":
-OPTION(USE_CURL "USE_CURL" ON)
+IF(CFITSIO_IS_TOPLEVEL AND NOT DEFINED BUILD_SHARED_LIBS)
+    SET(BUILD_SHARED_LIBS ON)
+ENDIF()
 
-OPTION(USE_PTHREADS "Thread-safe build (using pthreads)" OFF)
+# Build options. Standalone builds use unprefixed option names.
+# Included builds (add_subdirectory) use CFITSIO_-prefixed names.
+IF(CFITSIO_IS_TOPLEVEL)
+    OPTION(USE_CURL "Build with libcurl support for HTTPS-fetched FITS files" ON)
+    OPTION(USE_PTHREADS "Thread-safe build (using pthreads)" OFF)
+    OPTION(USE_BZIP2 "Build with bzip2 decompression support" OFF)
+    OPTION(USE_SSE2 "Enable use of SSE2 instructions" OFF)
+    OPTION(USE_SSSE3 "Enable use of SSSE3 instructions" OFF)
+    OPTION(TESTS "Build test programs Testprog and cookbook" ON)
+    OPTION(UTILS "Build helper programs [fpack, funpack, fitscopy, fitsverify, imcopy, smem, speed]" ON)
+    OPTION(ITERPROGS "Build programs that test the CFITSIO iterator function" OFF)
+ELSE()
+    OPTION(CFITSIO_USE_CURL "Build with libcurl support for HTTPS-fetched FITS files" ON)
+    OPTION(CFITSIO_USE_PTHREADS "Thread-safe build (using pthreads)" OFF)
+    OPTION(CFITSIO_USE_BZIP2 "Build with bzip2 decompression support" OFF)
+    OPTION(CFITSIO_USE_SSE2 "Enable use of SSE2 instructions" OFF)
+    OPTION(CFITSIO_USE_SSSE3 "Enable use of SSSE3 instructions" OFF)
+    OPTION(CFITSIO_TESTS "Build test programs Testprog and cookbook" OFF)
+    OPTION(CFITSIO_UTILS "Build helper programs [fpack, funpack, fitscopy, fitsverify, imcopy, smem, speed]" OFF)
+    OPTION(CFITSIO_ITERPROGS "Build programs that test the CFITSIO iterator function" OFF)
 
-OPTION(TESTS "Build test programs Testprog and cookbook" ON)
+    # Mirror to the unprefixed names
+    SET(USE_CURL     ${CFITSIO_USE_CURL})
+    SET(USE_PTHREADS ${CFITSIO_USE_PTHREADS})
+    SET(USE_BZIP2    ${CFITSIO_USE_BZIP2})
+    SET(USE_SSE2     ${CFITSIO_USE_SSE2})
+    SET(USE_SSSE3    ${CFITSIO_USE_SSSE3})
+    SET(TESTS        ${CFITSIO_TESTS})
+    SET(UTILS        ${CFITSIO_UTILS})
+    SET(ITERPROGS    ${CFITSIO_ITERPROGS})
+ENDIF()
 
-OPTION(ITERPROGS "Build programs that test the CFITSIO iterator function" OFF)
-
-OPTION(UTILS "Build helper programs [fpack, funpack, fitscopy, fitsverify, imcopy, smem, speed]" ON)
-
-OPTION(USE_SSE2 "Enable use of instructions in the SSE2 extended instruction set" OFF)
-
-OPTION(USE_SSSE3 "Enable use of instructions in the SSSE3 extended instruction set" OFF)
-
-OPTION(USE_BZIP2 "Enable bzip2 support" OFF)
+# Generate install/export/pkg-config rules. ON when standalone, OFF when
+# included via add_subdirectory (consumers don't need these). Always
+# CFITSIO_-prefixed since it has no upstream equivalent.
+OPTION(CFITSIO_INSTALL "Generate install, export, and pkg-config rules" ${CFITSIO_IS_TOPLEVEL})
 
 #==============================================================================
 
@@ -88,7 +116,6 @@ IF(USE_PTHREADS)
    FIND_PACKAGE(Threads REQUIRED)
    ADD_DEFINITIONS(-D_REENTRANT)
 ENDIF(USE_PTHREADS)
-
 IF(USE_BZIP2)
    FIND_PACKAGE(BZip2 REQUIRED)
    ADD_DEFINITIONS(-DHAVE_BZIP2=1)
@@ -130,9 +157,8 @@ ENDIF()
 IF(MSVC OR BORLAND)
     # Define
     ADD_DEFINITIONS(-D_CRT_SECURE_NO_DEPRECATE)
-    # Need an empty unistd.h in MSVC for flex-generated eval_l.c:
-    FILE(WRITE ${CMAKE_SOURCE_DIR}/unistd.h "")
-    INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR})
+    # Don't include <unistd.h> on Windows
+    ADD_DEFINITIONS(-DYY_NO_UNISTD_H)
 ENDIF()
 
 IF(BORLAND)
@@ -240,7 +266,7 @@ SET(SRC_FILES
     wcssub.c wcsutil.c zcompress.c zuncompress.c
 )
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # For future modifications:
 
@@ -293,54 +319,56 @@ set_property(TARGET cfitsio APPEND PROPERTY
   COMPATIBLE_INTERFACE_STRING cfitsio_MAJOR_VERSION
 )
 
-install(TARGETS cfitsio EXPORT cfitsioTargets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+IF(CFITSIO_INSTALL)
+    install(TARGETS cfitsio EXPORT cfitsioTargets
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
 
-install(FILES ${H_FILES} "${CMAKE_CURRENT_BINARY_DIR}/cfitsio_export.h"
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Devel)
+    install(FILES ${H_FILES} "${CMAKE_CURRENT_BINARY_DIR}/cfitsio_export.h"
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Devel)
 
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioConfigVersion.cmake"
-  VERSION ${CFITSIO_VERSION}
-  COMPATIBILITY AnyNewerVersion
-)
+    include(CMakePackageConfigHelpers)
+    write_basic_package_version_file(
+      "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioConfigVersion.cmake"
+      VERSION ${CFITSIO_VERSION}
+      COMPATIBILITY AnyNewerVersion
+    )
 
-export(EXPORT cfitsioTargets
-  FILE "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioTargets.cmake"
-  NAMESPACE CFITSIO::
-)
-configure_file(cmake/cfitsioConfig.cmake
-  "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioConfig.cmake"
-  COPYONLY
-)
+    export(EXPORT cfitsioTargets
+      FILE "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioTargets.cmake"
+      NAMESPACE CFITSIO::
+    )
+    configure_file(cmake/cfitsioConfig.cmake
+      "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioConfig.cmake"
+      COPYONLY
+    )
 
-set(ConfigPackageLocation ${CMAKE_INSTALL_LIBDIR}/cmake/cfitsio)
-install(EXPORT cfitsioTargets
-  FILE
-    cfitsioTargets.cmake
-  NAMESPACE
-    CFITSIO::
-  DESTINATION
-    ${ConfigPackageLocation}
-)
-install(
-  FILES
-    cmake/cfitsioConfig.cmake
-    "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioConfigVersion.cmake"
-  DESTINATION
-    ${ConfigPackageLocation}
-  COMPONENT
-    Devel
-)
+    set(ConfigPackageLocation ${CMAKE_INSTALL_LIBDIR}/cmake/cfitsio)
+    install(EXPORT cfitsioTargets
+      FILE
+        cfitsioTargets.cmake
+      NAMESPACE
+        CFITSIO::
+      DESTINATION
+        ${ConfigPackageLocation}
+    )
+    install(
+      FILES
+        cmake/cfitsioConfig.cmake
+        "${CMAKE_CURRENT_BINARY_DIR}/cfitsio/cfitsioConfigVersion.cmake"
+      DESTINATION
+        ${ConfigPackageLocation}
+      COMPONENT
+        Devel
+    )
 
-# cfitsio.pc:
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cfitsio.pc.cmake ${CMAKE_CURRENT_BINARY_DIR}/cfitsio.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cfitsio.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+    # cfitsio.pc:
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cfitsio.pc.cmake ${CMAKE_CURRENT_BINARY_DIR}/cfitsio.pc @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cfitsio.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+ENDIF()
 
 #==============================================================================
 # Test programs:
@@ -360,7 +388,9 @@ IF (TESTS)
     TARGET_LINK_LIBRARIES(cookbook ${LIB_NAME})
     ADD_TEST(cookbook cookbook)
 
-    install(TARGETS cookbook RUNTIME DESTINATION bin)
+    IF(CFITSIO_INSTALL)
+        install(TARGETS cookbook RUNTIME DESTINATION bin)
+    ENDIF()
 
 ENDIF(TESTS)
 
@@ -370,13 +400,13 @@ IF (ITERPROGS)
     TARGET_LINK_LIBRARIES(Iter_Image ${LIB_NAME})
     #ADD_TEST(Iter_Image Iter_Image)
     #install(TARGETS Iter_Image RUNTIME DESTINATION bin)
-    FILE(COPY ${CMAKE_SOURCE_DIR}/iter_image.fit DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+    FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/iter_image.fit DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
     ADD_EXECUTABLE(Iter_Var utilities/iter_var.c)
     TARGET_LINK_LIBRARIES(Iter_Var ${LIB_NAME})
     #ADD_TEST(Iter_Var Iter_Var)
     #install(TARGETS Iter_Var RUNTIME DESTINATION bin)
-    FILE(COPY ${CMAKE_SOURCE_DIR}/vari.fits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+    FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/vari.fits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 ENDIF(ITERPROGS)
 
@@ -418,9 +448,11 @@ IF (UTILS)
       set_target_properties(fpack funpack PROPERTIES LINK_FLAGS "setargv.obj")
     endif()
 
-    install(TARGETS fpack funpack fitscopy fitsverify imcopy speed RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-    IF(HAVE_SHMEM_SERVICES)
-      install(TARGETS smem RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    IF(CFITSIO_INSTALL)
+        install(TARGETS fpack funpack fitscopy fitsverify imcopy speed RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        IF(HAVE_SHMEM_SERVICES)
+          install(TARGETS smem RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        ENDIF()
     ENDIF()
 
 ENDIF(UTILS)
